@@ -769,31 +769,22 @@ class CodeBaseExplManager(Manager):
             if self._getExplorer().getStlCategory() != "Jumps":
                 lfCmd("norm! m'")
             
-            print(file)
+            print(file[2:])
+
+            float_win = "lua require('goto-codebase').setup{{ file=\"{}\"; }}".format(str(file[2:]))
+            print(float_win)
+
+            print(self._getInstance().currentLine)
 
             if mode == '':
                 pass
             elif mode == 'h':
-                lfCmd("split")
+                lfCmd(float_win)
+                
             elif mode == 'v':
-                lfCmd("bel vsplit")
+                lfCmd(float_win)
+                
 
-            kwargs["mode"] = mode
-            tabpage_count = len(vim.tabpages)
-            self._acceptSelection(file, *args, **kwargs)
-            for k, v in self._cursorline_dict.items():
-                if k.valid:
-                    k.options["cursorline"] = v
-            self._cursorline_dict.clear()
-            self._issue_422_set_option()
-            if mode == 't' and len(vim.tabpages) > tabpage_count:
-                tab_pos = int(lfEval("g:Lf_TabpagePosition"))
-                if tab_pos == 0:
-                    lfCmd("tabm 0")
-                elif tab_pos == 1:
-                    lfCmd("tabm -1")
-                elif tab_pos == 3:
-                    lfCmd("tabm")
 
 #*****************************************************
 # CodeBaseExplManager is a singleton
