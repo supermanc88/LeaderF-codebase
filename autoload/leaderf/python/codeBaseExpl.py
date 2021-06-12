@@ -764,6 +764,36 @@ class CodeBaseExplManager(Manager):
         finally:
             vim.options['eventignore'] = saved_eventignore
 
+    def _accept(self, file, mode, *args, **kwargs):
+        if file:
+            if self._getExplorer().getStlCategory() != "Jumps":
+                lfCmd("norm! m'")
+            
+            print(file)
+
+            if mode == '':
+                pass
+            elif mode == 'h':
+                lfCmd("split")
+            elif mode == 'v':
+                lfCmd("bel vsplit")
+
+            kwargs["mode"] = mode
+            tabpage_count = len(vim.tabpages)
+            self._acceptSelection(file, *args, **kwargs)
+            for k, v in self._cursorline_dict.items():
+                if k.valid:
+                    k.options["cursorline"] = v
+            self._cursorline_dict.clear()
+            self._issue_422_set_option()
+            if mode == 't' and len(vim.tabpages) > tabpage_count:
+                tab_pos = int(lfEval("g:Lf_TabpagePosition"))
+                if tab_pos == 0:
+                    lfCmd("tabm 0")
+                elif tab_pos == 1:
+                    lfCmd("tabm -1")
+                elif tab_pos == 3:
+                    lfCmd("tabm")
 
 #*****************************************************
 # CodeBaseExplManager is a singleton
