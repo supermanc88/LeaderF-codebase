@@ -22,4 +22,4 @@ call g:LfRegisterPythonExtension(s:extension.name, s:extension)
 command! -bar -nargs=0 LeaderfCodeBase Leaderf codebase
 
 " In order to be listed by :LeaderfSelf
-call g:LfRegisterSelf("LeaderfMarks", "navigate the marks")
+call g:LfRegisterSelf("LeaderfCodeBase", "navigate the codebase")
