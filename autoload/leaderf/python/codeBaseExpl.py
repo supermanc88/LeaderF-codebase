@@ -51,9 +51,9 @@ def format_line(line):
 
 
 #*****************************************************
-# CodeBaseExplorer
+# FileExplorer
 #*****************************************************
-class CodeBaseExplorer(Explorer):
+class FileExplorer(Explorer):
     def __init__(self):
         self._cur_dir = ''
         self._content = []
@@ -671,107 +671,220 @@ class CodeBaseExplorer(Explorer):
             exe.killProcess()
         self._executor = []
 
-#*****************************************************
-# CodeBaseExplManager
-#*****************************************************
-class CodeBaseExplManager(Manager):
-    def __init__(self):
-        super(CodeBaseExplManager, self).__init__()
 
+#*****************************************************
+# FileExplManager
+#*****************************************************
+class FileExplManager(Manager):
     def _getExplClass(self):
-        return CodeBaseExplorer
+        return FileExplorer
 
     def _defineMaps(self):
         lfCmd("call leaderf#CodeBase#Maps()")
 
-    def _acceptSelection(self, *args, **kwargs):
-        if len(args) == 0:
-            return
-        line = args[0]
-        cmd = line.split(None, 1)[0]
-        lfCmd("norm! `" + cmd)
-        lfCmd("norm! zz")
-        lfCmd("setlocal cursorline! | redraw | sleep 100m | setlocal cursorline!")
-
-    def _getDigest(self, line, mode):
-        """
-        specify what part in the line to be processed and highlighted
-        Args:
-            mode: 0, 1, 2, return the whole line
-        """
-        if not line:
-            return ''
-        return line[1:]
-
-    def _getDigestStartPos(self, line, mode):
-        """
-        return the start position of the digest returned by _getDigest()
-        Args:
-            mode: 0, 1, 2, return 1
-        """
-        return 1
-
     def _createHelp(self):
         help = []
-        help.append('" <CR>/<double-click>/o : execute command under cursor')
+        help.append('" <CR>/<double-click>/o : open file under cursor')
         help.append('" x : open file under cursor in a horizontally split window')
         help.append('" v : open file under cursor in a vertically split window')
         help.append('" t : open file under cursor in a new tabpage')
-        help.append('" i : switch to input mode')
-        help.append('" p : preview the result')
+        help.append('" i/<Tab> : switch to input mode')
+        help.append('" s : select multiple files')
+        help.append('" a : select all files')
+        help.append('" c : clear all selections')
+        help.append('" p : preview the file')
         help.append('" q : quit')
+        help.append('" <F5> : refresh the cache')
         help.append('" <F1> : toggle this help')
         help.append('" ---------------------------------------------------------')
         return help
 
-    def _afterEnter(self):
-        super(CodeBaseExplManager, self)._afterEnter()
-        if self._getInstance().getWinPos() == 'popup':
-            lfCmd("""call win_execute(%d, 'let matchid = matchadd(''Lf_hl_marksTitle'', ''^mark line .*$'')')"""
-                    % self._getInstance().getPopupWinId())
-            id = int(lfEval("matchid"))
-            self._match_ids.append(id)
-            lfCmd("""call win_execute(%d, 'let matchid = matchadd(''Lf_hl_marksLineCol'', ''^\s*\S\+\s\+\zs\d\+\s\+\d\+'')')"""
-                    % self._getInstance().getPopupWinId())
-            id = int(lfEval("matchid"))
-            self._match_ids.append(id)
-            lfCmd("""call win_execute(%d, 'let matchid = matchadd(''Lf_hl_marksText'', ''^\s*\S\+\s\+\d\+\s\+\d\+\s*\zs.*$'')')"""
-                    % self._getInstance().getPopupWinId())
-            id = int(lfEval("matchid"))
-            self._match_ids.append(id)
+    def _nearestAncestor(self, markers, path):
+        """
+        return the nearest ancestor path(including itself) of `path` that contains
+        one of files or directories in `markers`.
+        `markers` is a list of file or directory names.
+        """
+        if os.name == 'nt':
+            # e.g. C:\\
+            root = os.path.splitdrive(os.path.abspath(path))[0] + os.sep
         else:
-            id = int(lfEval('''matchadd('Lf_hl_marksTitle', '^mark line .*$')'''))
-            self._match_ids.append(id)
-            id = int(lfEval('''matchadd('Lf_hl_marksLineCol', '^\s*\S\+\s\+\zs\d\+\s\+\d\+')'''))
-            self._match_ids.append(id)
-            id = int(lfEval('''matchadd('Lf_hl_marksText', '^\s*\S\+\s\+\d\+\s\+\d\+\s*\zs.*$')'''))
-            self._match_ids.append(id)
+            root = '/'
+
+        path = os.path.abspath(path)
+        while path != root:
+            for name in markers:
+                if os.path.exists(os.path.join(path, name)):
+                    return path
+            path = os.path.abspath(os.path.join(path, ".."))
+
+        for name in markers:
+            if os.path.exists(os.path.join(path, name)):
+                return path
+
+        return ""
+
+    def _afterEnter(self):
+        super(FileExplManager, self)._afterEnter()
+        lfCmd("augroup Lf_File")
+        lfCmd("autocmd!")
+        lfCmd("autocmd VimLeavePre * call leaderf#CodeBase#cleanup()")
+        lfCmd("augroup END")
+
+        if lfEval("get(g:, 'Lf_ShowDevIcons', 1)") == '1':
+            winid = self._getInstance().getPopupWinId() if self._getInstance().getWinPos() == 'popup' else None
+            icon_pattern = r'^__icon__'
+            self._match_ids.extend(matchaddDevIconsExtension(icon_pattern, winid))
+            self._match_ids.extend(matchaddDevIconsExact(icon_pattern, winid))
+            self._match_ids.extend(matchaddDevIconsDefault(icon_pattern, winid))
 
     def _beforeExit(self):
-        super(CodeBaseExplManager, self)._beforeExit()
+        super(FileExplManager, self)._beforeExit()
+        if self._timer_id is not None:
+            lfCmd("call timer_stop(%s)" % self._timer_id)
+            self._timer_id = None
 
-    def _previewInPopup(self, *args, **kwargs):
-        if len(args) == 0:
+    def _bangEnter(self):
+        super(FileExplManager, self)._bangEnter()
+        if lfEval("exists('*timer_start')") == '0':
+            lfCmd("echohl Error | redraw | echo ' E117: Unknown function: timer_start' | echohl NONE")
             return
 
-        line = args[0]
-        cmd = "silent! norm! `" + line.split(None, 1)[0]
+        self._workInIdle(bang=True)
+        if self._read_finished < 2:
+            self._timer_id = lfEval("timer_start(1, 'leaderf#CodeBase#TimerCallback', {'repeat': -1})")
 
-        saved_eventignore = vim.options['eventignore']
-        vim.options['eventignore'] = 'BufWinEnter'
+    def startExplorer(self, win_pos, *args, **kwargs):
+        directory = kwargs.get("arguments", {}).get("directory")
+        if directory and directory[0] not in ['""', "''"]: # behavior no change for `LeaderfFile <directory>`
+            self._orig_cwd = None
+            super(FileExplManager, self).startExplorer(win_pos, *args, **kwargs)
+            return
+
+        self._orig_cwd = lfGetCwd()
+        root_markers = lfEval("g:Lf_RootMarkers")
+        mode = lfEval("g:Lf_WorkingDirectoryMode")
+        working_dir = lfEval("g:Lf_WorkingDirectory")
+
+        # https://github.com/neovim/neovim/issues/8336
+        if lfEval("has('nvim')") == '1':
+            chdir = vim.chdir
+        else:
+            chdir = os.chdir
+
+        if os.path.exists(working_dir) and os.path.isdir(working_dir):
+            chdir(working_dir)
+            super(FileExplManager, self).startExplorer(win_pos, *args, **kwargs)
+            return
+
+        cur_buf_name = lfDecode(vim.current.buffer.name)
+        fall_back = False
+        if 'a' in mode:
+            working_dir = self._nearestAncestor(root_markers, self._orig_cwd)
+            if working_dir: # there exists a root marker in nearest ancestor path
+                chdir(working_dir)
+            else:
+                fall_back = True
+        elif 'A' in mode:
+            if cur_buf_name:
+                working_dir = self._nearestAncestor(root_markers, os.path.dirname(cur_buf_name))
+            else:
+                working_dir = ""
+            if working_dir: # there exists a root marker in nearest ancestor path
+                chdir(working_dir)
+            else:
+                fall_back = True
+        else:
+            fall_back = True
+
+        if fall_back:
+            if 'f' in mode:
+                if cur_buf_name:
+                    chdir(os.path.dirname(cur_buf_name))
+            elif 'F' in mode:
+                if cur_buf_name and not os.path.dirname(cur_buf_name).startswith(self._orig_cwd):
+                    chdir(os.path.dirname(cur_buf_name))
+
+        super(FileExplManager, self).startExplorer(win_pos, *args, **kwargs)
+
+    @removeDevIcons
+    def _previewInPopup(self, *args, **kwargs):
+        line = args[0]
+        if lfEval("bufloaded('%s')" % escQuote(line)) == '1':
+            source = int(lfEval("bufadd('%s')" % escQuote(line)))
+        else:
+            source = line
+        self._createPopupPreview(line, source, 0)
+
+    @removeDevIcons
+    def _acceptSelection(self, *args, **kwargs):
+        if len(args) == 0:
+            return
+        file = args[0]
         try:
-            self._createPopupPreview("", self._getInstance().getOriginalPos()[2].number, 0, jump_cmd=cmd)
-        finally:
-            vim.options['eventignore'] = saved_eventignore
+            if not os.path.isabs(file):
+                if self._getExplorer()._cmd_work_dir:
+                    file = os.path.join(self._getExplorer()._cmd_work_dir, lfDecode(file))
+                else:
+                    file = os.path.join(self._getInstance().getCwd(), lfDecode(file))
+                file = os.path.normpath(lfEncode(file))
+
+            if kwargs.get("mode", '') == 't':
+                if (lfEval("get(g:, 'Lf_DiscardEmptyBuffer', 1)") == '1' and vim.current.buffer.name == ''
+                        and vim.current.buffer.number == 1
+                        and len(vim.current.tabpage.windows) == 1 and len(vim.current.buffer) == 1
+                        and vim.current.buffer[0] == '' and not vim.current.buffer.options["modified"]
+                        and not (lfEval("get(g:, 'Lf_JumpToExistingWindow', 1)") == '1'
+                            and lfEval("bufloaded('%s')" % escQuote(file)) == '1'
+                            and len([w for tp in vim.tabpages for w in tp.windows if w.buffer.name == file]) > 0)):
+                    lfCmd("setlocal bufhidden=wipe")
+                    lfCmd("hide edit %s" % escSpecial(file))
+                elif lfEval("get(g:, 'Lf_JumpToExistingWindow', 1)") == '1' and lfEval("bufloaded('%s')" % escQuote(file)) == '1':
+                    lfDrop('tab', file)
+                else:
+                    lfCmd("tabe %s" % escSpecial(file))
+            else:
+                if (lfEval("get(g:, 'Lf_JumpToExistingWindow', 1) == '1'") or kwargs.get("mode", 'dr')) and lfEval("bufloaded('%s')" % escQuote(file)) == '1':
+                    if (kwargs.get("mode", '') == '' and lfEval("get(g:, 'Lf_DiscardEmptyBuffer', 1)") == '1'
+                            and vim.current.buffer.name == ''
+                            and vim.current.buffer.number == 1
+                            and len(vim.current.buffer) == 1 and vim.current.buffer[0] == ''
+                            and not vim.current.buffer.options["modified"]
+                            and len([w for w in vim.windows if w.buffer.name == file]) == 0):
+                        lfCmd("setlocal bufhidden=wipe")
+                    lfDrop('', file)
+                else:
+                    if (kwargs.get("mode", '') == '' and lfEval("get(g:, 'Lf_DiscardEmptyBuffer', 1)") == '1'
+                            and vim.current.buffer.name == ''
+                            and vim.current.buffer.number == 1
+                            and len(vim.current.buffer) == 1 and vim.current.buffer[0] == ''
+                            and not vim.current.buffer.options["modified"]):
+                        lfCmd("setlocal bufhidden=wipe")
+
+                    lfCmd("hide edit %s" % escSpecial(file))
+        except vim.error: # E37
+            lfPrintTraceback()
 
     def _accept(self, file, mode, *args, **kwargs):
         if file:
             if self._getExplorer().getStlCategory() != "Jumps":
                 lfCmd("norm! m'")
-            
-            print(file[2:])
 
-            float_win = "lua require('goto-codebase').setup{{ file=\"{}\"; }}".format(str(file[2:]))
+            print(lfDecode(file))
+            print(file[2:])
+            
+            print(self._getExplorer()._cmd_work_dir)
+
+            print(self._getInstance().getCwd())
+            
+            work_dir = self._getExplorer()._cmd_work_dir
+            
+            float_win = ""
+            if work_dir:
+                
+            
+
+            float_win = "lua require('goto-codebase').setup{{ file=\".\\{}\"; }}".format(str(file[2:]))
             print(float_win)
 
             print(self._getInstance().currentLine)
@@ -780,15 +893,12 @@ class CodeBaseExplManager(Manager):
                 pass
             elif mode == 'h':
                 lfCmd(float_win)
-                
+
             elif mode == 'v':
                 lfCmd(float_win)
-                
-
-
 #*****************************************************
-# CodeBaseExplManager is a singleton
+# fileExplManager is a singleton
 #*****************************************************
-codeBaseExplManager = CodeBaseExplManager()
+codeBaseExplManager = FileExplManager()
 
 __all__ = ['codeBaseExplManager']
