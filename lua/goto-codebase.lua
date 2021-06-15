@@ -39,9 +39,9 @@ local M = {
   local windows = {}
 
   M.open_floating_win = function(file)
-    local buffer = file
-
-	print(buffer)
+    -- local buffer = file
+	local buffer_uri = vim.uri_from_fname(file)
+	local buffer = vim.uri_to_bufnr(buffer_uri)
 
     local bufpos = { vim.fn.line(".")-1, vim.fn.col(".")  } -- FOR relative='win'
 
@@ -53,9 +53,10 @@ local M = {
       height=M.conf.height,
       border={"↖", "─" ,"┐", "│", "┘", "─", "└", "│"},
       bufpos=bufpos,
-      zindex=zindex, -- TODO: do I need to set this at all?
-      win=vim.api.nvim_get_current_win()
+	  zindex=zindex, -- TODO: do I need to set this at all?
+	  win=vim.api.nvim_get_current_win()
     })
+
 
     -- if M.conf.opacity then vim.api.nvim_win_set_option(new_window, "winblend", M.conf.opacity) end
     -- vim.api.nvim_buf_set_option(buffer, 'bufhidden', 'wipe')
