@@ -872,22 +872,20 @@ class FileExplManager(Manager):
 
             print(lfDecode(file))
             print(file[2:])
-            
+
             print(self._getExplorer()._cmd_work_dir)
 
             print(self._getInstance().getCwd())
-            
+
             work_dir = self._getExplorer()._cmd_work_dir
-            
+
             float_win = ""
             if work_dir:
-                
-            
+                float_win = "lua require('goto-codebase').setup{{ file=\"{0}\\{1}\"; }}".format(work_dir, str(file[2:]))
+            else
+                float_win = "lua require('goto-codebase').setup{{ file=\"{0}\\{1}\"; }}".format(self._getInstance().getCwd(), str(file[2:]))
 
-            float_win = "lua require('goto-codebase').setup{{ file=\".\\{}\"; }}".format(str(file[2:]))
             print(float_win)
-
-            print(self._getInstance().currentLine)
 
             if mode == '':
                 pass
