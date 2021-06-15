@@ -877,14 +877,15 @@ class FileExplManager(Manager):
             #
             #  print(self._getInstance().getCwd())
 
-            work_dir = self._getExplorer()._cmd_work_dir + "\\" + str(file[2:])
-            work_dir1 = self._getInstance().getCwd() + "\\" + str(file[2:])
+            work_dir = self._getExplorer()._cmd_work_dir
+            work_dir1 = self._getInstance().getCwd()
 
             float_win = ""
             if work_dir:
-                float_win = "lua require('goto-codebase').setup{{ file=\"{0}\"; }}".format(work_dir)
+                float_win = "lua require('goto-codebase').open_floating_win( \"{0}\\{1}\")".format(work_dir, str(file[2:]))
             else:
-                float_win = "lua require('goto-codebase').setup{{ file=\"{0}\"; }}".format(work_dir1)
+                #  float_win = "lua require('goto-codebase').setup{{ file=\"{0}\\{1}\"; }}".format(work_dir1, str(file[2:]))
+                float_win = "lua require('goto-codebase').open_floating_win( \"{0}\\{1}\")".format(work_dir1, str(file[2:]))
 
             #  print(float_win)
 
